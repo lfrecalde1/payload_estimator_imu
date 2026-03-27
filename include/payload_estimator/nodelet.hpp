@@ -1,5 +1,6 @@
 #pragma once
 
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <quadrotor_msgs/msg/trpy_command.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -50,6 +51,9 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_thrust_inertial_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_cable_direction_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_cable_direction_geom_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_cable_direction_geom_lc_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr pub_payload_est_point_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_payload_est_odom_;
 };
 
 } // namespace payload_estimator_nodelet

@@ -62,6 +62,14 @@ PayloadEstimatorNodelet::PayloadEstimatorNodelet(
   pub_cable_direction_geom_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
           "cable_direction_geom", 10);
+  pub_cable_direction_geom_lc_ =
+      this->create_publisher<std_msgs::msg::Float64MultiArray>(
+          "cable_direction_geom_lc", 10);
+  pub_payload_est_point_ =
+      this->create_publisher<geometry_msgs::msg::PointStamped>(
+          "payload_estimated_point", 10);
+  pub_payload_est_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(
+      "payload_estimated_odom", 10);
 
   RCLCPP_INFO(this->get_logger(),
               "[payload_estimator] Subscribed to topics: 'odom', 'imu', "
@@ -153,7 +161,7 @@ void PayloadEstimatorNodelet::tryPublishEstimates() {
       imu->linear_acceleration.z;
   const Eigen::Vector3d a_inertial = R * a_body;
   const Eigen::Vector3d gravity_inertial(0.0, 0.0, gravity_);
-  const Eigen::Vector3d a_inertial_no_g = a_inertial - gravity_inertial;
+  const Eigen::Vector3d a_inertial_no_g = a_inertial;
   const Eigen::Vector3d force_inertial = mass_ * a_inertial_no_g;
 
   const Eigen::Vector3d e3(0.0, 0.0, 1.0);
@@ -175,15 +183,42 @@ void PayloadEstimatorNodelet::tryPublishEstimates() {
     cable_direction = force_diff / diff_norm;
   }
 
+  const double cable_direction_norm = cable_direction.norm();
+
   std_msgs::msg::Float64MultiArray cable_msg;
   cable_msg.data = {cable_direction.x(), cable_direction.y(),
-                    cable_direction.z()};
+                    cable_direction.z(), cable_direction_norm};
   pub_cable_direction_->publish(cable_msg);
 
+  constexpr double cable_length = 0.76;
+  Eigen::Vector3d p_q;
+  p_q << odom->pose.pose.position.x, odom->pose.pose.position.y,
+      odom->pose.pose.position.z;
+  const Eigen::Vector3d p_payload_est = p_q + cable_length * cable_direction;
+
+  geometry_msgs::msg::PointStamped payload_point_msg;
+  payload_point_msg.header.stamp = odom->header.stamp;
+  payload_point_msg.header.frame_id = frame_id_;
+  payload_point_msg.point.x = p_payload_est.x();
+  payload_point_msg.point.y = p_payload_est.y();
+  payload_point_msg.point.z = p_payload_est.z();
+  pub_payload_est_point_->publish(payload_point_msg);
+
+  nav_msgs::msg::Odometry payload_odom_msg;
+  payload_odom_msg.header.stamp = odom->header.stamp;
+  payload_odom_msg.header.frame_id = frame_id_;
+  payload_odom_msg.child_frame_id = "payload_estimated";
+  payload_odom_msg.pose.pose.position.x = p_payload_est.x();
+  payload_odom_msg.pose.pose.position.y = p_payload_est.y();
+  payload_odom_msg.pose.pose.position.z = p_payload_est.z();
+  payload_odom_msg.pose.pose.orientation.w = 1.0;
+  payload_odom_msg.pose.pose.orientation.x = 0.0;
+  payload_odom_msg.pose.pose.orientation.y = 0.0;
+  payload_odom_msg.pose.pose.orientation.z = 0.0;
+  pub_payload_est_odom_->publish(payload_odom_msg);
+
   if (payload_odom) {
-    Eigen::Vector3d p_q, p_payload;
-    p_q << odom->pose.pose.position.x, odom->pose.pose.position.y,
-        odom->pose.pose.position.z;
+    Eigen::Vector3d p_payload;
     p_payload << payload_odom->pose.pose.position.x,
         payload_odom->pose.pose.position.y, payload_odom->pose.pose.position.z;
 
@@ -191,13 +226,22 @@ void PayloadEstimatorNodelet::tryPublishEstimates() {
     const double delta_norm = delta.norm();
     Eigen::Vector3d cable_direction_geom = Eigen::Vector3d::Zero();
     if (delta_norm > 1e-9) {
-      cable_direction_geom = delta / 0.76;
+      cable_direction_geom = delta / delta_norm;
     }
+    const double cable_direction_geom_norm = cable_direction_geom.norm();
 
     std_msgs::msg::Float64MultiArray cable_geom_msg;
     cable_geom_msg.data = {cable_direction_geom.x(), cable_direction_geom.y(),
-                           cable_direction_geom.z()};
+                           cable_direction_geom.z(), cable_direction_geom_norm};
     pub_cable_direction_geom_->publish(cable_geom_msg);
+
+    const Eigen::Vector3d cable_direction_geom_lc = delta / cable_length;
+    const double cable_direction_geom_lc_norm = cable_direction_geom_lc.norm();
+    std_msgs::msg::Float64MultiArray cable_geom_lc_msg;
+    cable_geom_lc_msg.data = {
+        cable_direction_geom_lc.x(), cable_direction_geom_lc.y(),
+        cable_direction_geom_lc.z(), cable_direction_geom_lc_norm};
+    pub_cable_direction_geom_lc_->publish(cable_geom_lc_msg);
   }
 }
 
