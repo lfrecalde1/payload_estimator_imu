@@ -1,4 +1,3 @@
-
 #include "payload_estimator_imu/payload_equivariant_sync_observer_nodelet.hpp"
 
 #include <rclcpp_components/register_node_macro.hpp>
@@ -8,11 +7,12 @@
 #include <cmath>
 #include <type_traits>
 
-namespace payload_equivariant_sync_observer_nodelet {
+namespace payload_sync_equivariant_observer_verified_nodelet {
 
-PayloadEquivariantSyncObserverNodelet::PayloadEquivariantSyncObserverNodelet(
-    const rclcpp::NodeOptions &options)
-    : Node("payload_equivariant_sync_observer_nodelet", options) {
+PayloadSyncEquivariantObserverVerifiedNodelet::
+    PayloadSyncEquivariantObserverVerifiedNodelet(
+        const rclcpp::NodeOptions &options)
+    : Node("payload_sync_equivariant_observer_verified_nodelet", options) {
   mass_ = 1.24;
   payload_mass_ = 0.20;
   gravity_ = 9.81;
@@ -52,11 +52,10 @@ PayloadEquivariantSyncObserverNodelet::PayloadEquivariantSyncObserverNodelet(
   declareAndReadParam("k_nu_force", k_nu_force_, "%.6f");
   declareAndReadParam("gamma_tau", gamma_tau_, "%.6f");
   declareAndReadParam("gamma_f", gamma_f_, "%.6f");
-
   declareAndReadParam("max_bias_force", max_bias_force_, "%.6f");
   declareAndReadParam("max_bias_tension", max_bias_tension_, "%.6f");
   declareAndReadParam("max_nu_norm", max_nu_norm_, "%.6f");
-  declareAndReadParam("init_bias_force_scale", init_bias_force_scale_, "%.6f");
+  declareAndReadParam("init_force_bias_scale", init_force_bias_scale_, "%.6f");
 
   declareAndReadParam("ixx", inertia_(0, 0), "%.6f");
   declareAndReadParam("iyy", inertia_(1, 1), "%.6f");
@@ -67,103 +66,105 @@ PayloadEquivariantSyncObserverNodelet::PayloadEquivariantSyncObserverNodelet(
 
   sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "/quadrotor/odom", qos,
-      std::bind(&PayloadEquivariantSyncObserverNodelet::odomCallback, this,
-                std::placeholders::_1));
+      std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::odomCallback,
+                this, std::placeholders::_1));
   sub_payload_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "/quadrotor/payload/odom", qos,
-      std::bind(&PayloadEquivariantSyncObserverNodelet::payloadOdomCallback,
-                this, std::placeholders::_1));
+      std::bind(
+          &PayloadSyncEquivariantObserverVerifiedNodelet::payloadOdomCallback,
+          this, std::placeholders::_1));
   sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
       "/quadrotor/imu", qos,
-      std::bind(&PayloadEquivariantSyncObserverNodelet::imuCallback, this,
-                std::placeholders::_1));
+      std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::imuCallback,
+                this, std::placeholders::_1));
   sub_trpy_ = this->create_subscription<quadrotor_msgs::msg::TRPYCommand>(
       "/quadrotor/trpy_cmd", qos,
-      std::bind(&PayloadEquivariantSyncObserverNodelet::trpyCallback, this,
-                std::placeholders::_1));
+      std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::trpyCallback,
+                this, std::placeholders::_1));
   sub_tension_ = this->create_subscription<sensor_msgs::msg::FluidPressure>(
       "/quadrotor/rope0/tension", qos,
-      std::bind(&PayloadEquivariantSyncObserverNodelet::tensionCallback, this,
-                std::placeholders::_1));
+      std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::tensionCallback,
+                this, std::placeholders::_1));
 
   pub_force_inertial_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/force_inertial", 10);
+          "sync_eq_verified/force_inertial", 10);
   pub_thrust_inertial_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/thrust_inertial", 10);
-  pub_cable_direction_ =
+          "sync_eq_verified/thrust_inertial", 10);
+  pub_cable_direction_raw_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/cable_direction_raw", 10);
+          "sync_eq_verified/cable_direction_raw", 10);
   pub_cable_direction_observer_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/cable_direction_observer", 10);
+          "sync_eq_verified/cable_direction_observer", 10);
   pub_cable_direction_geom_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/cable_direction_geom", 10);
+          "sync_eq_verified/cable_direction_geom", 10);
   pub_observer_debug_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "sync_observer/debug", 10);
+          "sync_eq_verified/debug", 10);
   pub_payload_est_point_ =
       this->create_publisher<geometry_msgs::msg::PointStamped>(
-          "sync_observer/payload_estimated_point", 10);
+          "sync_eq_verified/payload_estimated_point", 10);
   pub_payload_est_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(
-      "sync_observer/payload_estimated_odom", 10);
+      "sync_eq_verified/payload_estimated_odom", 10);
 
   const double period_s = 1.0 / std::max(1.0, publish_rate_);
   publish_timer_ = this->create_wall_timer(
       std::chrono::duration<double>(period_s),
-      std::bind(&PayloadEquivariantSyncObserverNodelet::publishTimerCallback,
-                this));
+      std::bind(
+          &PayloadSyncEquivariantObserverVerifiedNodelet::publishTimerCallback,
+          this));
 
-  RCLCPP_INFO(this->get_logger(),
-              "[payload_equivariant_sync_observer] IMU-driven synchronous/"
-              "equivariant observer enabled. Publish rate: %.2f Hz",
-              publish_rate_);
+  RCLCPP_INFO(
+      this->get_logger(),
+      "[payload_sync_equivariant_observer_verified] enabled at %.2f Hz.",
+      publish_rate_);
 }
 
 template <typename T>
-void PayloadEquivariantSyncObserverNodelet::declareAndReadParam(
+void PayloadSyncEquivariantObserverVerifiedNodelet::declareAndReadParam(
     const std::string &name, T &value, const char *fmt) {
   this->declare_parameter<T>(name, value);
   if (!this->get_parameter(name, value)) {
-    RCLCPP_ERROR(
-        this->get_logger(),
-        "[payload_equivariant_sync_observer] failed to read parameter: %s",
-        name.c_str());
+    RCLCPP_ERROR(this->get_logger(),
+                 "[payload_sync_equivariant_observer_verified] failed to read "
+                 "parameter: %s",
+                 name.c_str());
     return;
   }
 
   if constexpr (std::is_same_v<T, std::string>) {
     RCLCPP_INFO(this->get_logger(),
-                "[payload_equivariant_sync_observer] %s: %s", name.c_str(),
-                value.c_str());
+                "[payload_sync_equivariant_observer_verified] %s: %s",
+                name.c_str(), value.c_str());
   } else if constexpr (std::is_same_v<T, bool>) {
     RCLCPP_INFO(this->get_logger(),
-                "[payload_equivariant_sync_observer] %s: %s", name.c_str(),
-                value ? "true" : "false");
+                "[payload_sync_equivariant_observer_verified] %s: %s",
+                name.c_str(), value ? "true" : "false");
   } else {
     RCLCPP_INFO(this->get_logger(),
-                (std::string("[payload_equivariant_sync_observer] ") + name +
-                 ": " + fmt)
+                (std::string("[payload_sync_equivariant_observer_verified] ") +
+                 name + ": " + fmt)
                     .c_str(),
                 value);
   }
 }
 
-void PayloadEquivariantSyncObserverNodelet::odomCallback(
+void PayloadSyncEquivariantObserverVerifiedNodelet::odomCallback(
     const nav_msgs::msg::Odometry::SharedPtr msg) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   last_odom_ = msg;
 }
 
-void PayloadEquivariantSyncObserverNodelet::payloadOdomCallback(
+void PayloadSyncEquivariantObserverVerifiedNodelet::payloadOdomCallback(
     const nav_msgs::msg::Odometry::SharedPtr msg) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   last_payload_odom_ = msg;
 }
 
-void PayloadEquivariantSyncObserverNodelet::imuCallback(
+void PayloadSyncEquivariantObserverVerifiedNodelet::imuCallback(
     const sensor_msgs::msg::Imu::SharedPtr msg) {
   nav_msgs::msg::Odometry::SharedPtr odom;
   nav_msgs::msg::Odometry::SharedPtr payload_odom;
@@ -182,25 +183,24 @@ void PayloadEquivariantSyncObserverNodelet::imuCallback(
   processImu(*msg, odom, trpy, tension, payload_odom);
 }
 
-void PayloadEquivariantSyncObserverNodelet::trpyCallback(
+void PayloadSyncEquivariantObserverVerifiedNodelet::trpyCallback(
     const quadrotor_msgs::msg::TRPYCommand::SharedPtr msg) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   last_trpy_ = msg;
 }
 
-void PayloadEquivariantSyncObserverNodelet::tensionCallback(
+void PayloadSyncEquivariantObserverVerifiedNodelet::tensionCallback(
     const sensor_msgs::msg::FluidPressure::SharedPtr msg) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   last_tension_ = msg;
 }
 
-void PayloadEquivariantSyncObserverNodelet::processImu(
+void PayloadSyncEquivariantObserverVerifiedNodelet::processImu(
     const sensor_msgs::msg::Imu &imu_msg,
     const nav_msgs::msg::Odometry::SharedPtr &odom,
     const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
     const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
     const nav_msgs::msg::Odometry::SharedPtr &payload_odom) {
-
   (void)payload_odom;
 
   if (!odom || !trpy) {
@@ -254,8 +254,8 @@ void PayloadEquivariantSyncObserverNodelet::processImu(
   {
     std::lock_guard<std::mutex> lock(observer_mutex_);
 
-    cacheDebugValues(R_wb, a_b, thrust_newton, zf_b, raw_dir_body,
-                     force_norm_body, have_tension, tension_newton);
+    cacheDebugValuesLocked(R_wb, a_b, thrust_newton, zf_b, raw_dir_body,
+                           force_norm_body, have_tension, tension_newton);
 
     if (!observer_initialized_ || last_observer_time_ < 0.0 ||
         std::fabs(t_imu - last_observer_time_) > reset_dt_) {
@@ -264,60 +264,61 @@ void PayloadEquivariantSyncObserverNodelet::processImu(
           force_norm_body > force_min_) {
         b0_body = raw_dir_body;
       }
-      initializeObserver(b0_body, a_b, zf_b, have_tension, tension_newton,
-                         t_imu);
+      initializeObserverLocked(b0_body, a_b, zf_b, have_tension, tension_newton,
+                               t_imu);
     }
 
-    double dt = t_imu - last_observer_time_;
+    const double dt = t_imu - last_observer_time_;
     if (dt > 0.0) {
       const int n_steps =
           std::max(1, static_cast<int>(std::ceil(dt / max_prediction_dt_)));
       const double h = dt / static_cast<double>(n_steps);
 
       for (int i = 0; i < n_steps; ++i) {
-        const bool have_dir = use_direction_update_ && have_tension &&
-                              tension_newton > tau_min_ &&
-                              force_norm_body > force_min_;
-        const bool have_tau =
+        const bool have_direction = use_direction_update_ && have_tension &&
+                                    tension_newton > tau_min_ &&
+                                    force_norm_body > force_min_;
+        const bool use_tau =
             use_tension_update_ && have_tension && tension_newton > tau_min_;
-        propagateObserver(h, omega_b, a_b, zf_b, have_dir, have_tau,
-                          tension_newton);
+        propagateObserverLocked(h, omega_b, a_b, zf_b, have_direction, use_tau,
+                                tension_newton);
       }
       last_observer_time_ = t_imu;
     }
 
-    normalizeObserverState();
+    normalizeObserverStateLocked();
   }
 }
 
-void PayloadEquivariantSyncObserverNodelet::initializeObserver(
+void PayloadSyncEquivariantObserverVerifiedNodelet::initializeObserverLocked(
     const Eigen::Vector3d &b0_body_in, const Eigen::Vector3d &a_b,
     const Eigen::Vector3d &zf_b, bool have_tension, double tension_newton,
     double stamp_sec) {
   Eigen::Vector3d b0_body = b0_body_in;
   if (!finiteVec(b0_body) || b0_body.norm() < 1e-9) {
     b0_body = Eigen::Vector3d(0.0, 0.0, -1.0);
-  } else {
-    b0_body.normalize();
   }
+  b0_body.normalize();
 
-  Z_.setIdentity();
-  Y_ = rotationBToE3(b0_body);
+  Z_sync_.setIdentity();
+  Y_dir_ = liftFromDirection(b0_body);
   nu_bar_hat_.setZero();
 
-  const Eigen::Vector3d b_bar0 =
-      Y_.transpose() * Eigen::Vector3d(0.0, 0.0, 1.0);
+  const Eigen::Vector3d b_bar0 = bBarHatLocked();
   const double tau_model0 =
       payload_mass_ *
       (cable_length_ * nu_bar_hat_.squaredNorm() - b_bar0.dot(a_b));
-  b_tau_hat_ = (have_tension && std::isfinite(tension_newton))
-                   ? std::clamp(tension_newton - tau_model0, -max_bias_tension_,
-                                max_bias_tension_)
-                   : 0.0;
+
+  if (have_tension && std::isfinite(tension_newton)) {
+    b_tau_hat_ = std::clamp(tension_newton - tau_model0, -max_bias_tension_,
+                            max_bias_tension_);
+  } else {
+    b_tau_hat_ = 0.0;
+  }
 
   if (have_tension && std::isfinite(tension_newton) &&
       tension_newton > tau_min_) {
-    b_f_bar_hat_ = init_bias_force_scale_ * (zf_b - tension_newton * b_bar0);
+    b_f_bar_hat_ = init_force_bias_scale_ * (zf_b - tension_newton * b_bar0);
     b_f_bar_hat_ =
         b_f_bar_hat_.cwiseMax(-max_bias_force_ * Eigen::Vector3d::Ones())
             .cwiseMin(max_bias_force_ * Eigen::Vector3d::Ones());
@@ -328,15 +329,15 @@ void PayloadEquivariantSyncObserverNodelet::initializeObserver(
   observer_initialized_ = true;
   last_observer_time_ = stamp_sec;
 
-  normalizeObserverState();
+  normalizeObserverStateLocked();
 
   RCLCPP_INFO(this->get_logger(),
-              "[payload_equivariant_sync_observer] Observer initialized at "
+              "[payload_sync_equivariant_observer_verified] initialized at "
               "%.6f with b_body=[%.3f %.3f %.3f], b_tau=%.3f",
               stamp_sec, b0_body.x(), b0_body.y(), b0_body.z(), b_tau_hat_);
 }
 
-void PayloadEquivariantSyncObserverNodelet::propagateObserver(
+void PayloadSyncEquivariantObserverVerifiedNodelet::propagateObserverLocked(
     double dt, const Eigen::Vector3d &omega_b, const Eigen::Vector3d &a_b,
     const Eigen::Vector3d &zf_b, bool have_direction, bool have_tension,
     double tension_newton) {
@@ -345,38 +346,14 @@ void PayloadEquivariantSyncObserverNodelet::propagateObserver(
     return;
   }
 
-  // Synchronize the known body-rate drift.
-  Z_ = expSO3(-omega_b * dt) * Z_;
-  Z_ = projectToSO3(Z_);
+  // Synchronization state: Zdot = -S(omega) Z.
+  Z_sync_ = expSO3(-omega_b * dt) * Z_sync_;
+  Z_sync_ = projectToSO3(Z_sync_);
 
-  const Eigen::Vector3d e3(0.0, 0.0, 1.0);
-  const Eigen::Vector3d a_bar = Z_.transpose() * a_b;
-  const Eigen::Vector3d zf_bar = Z_.transpose() * zf_b;
+  const Eigen::Vector3d a_bar = Z_sync_.transpose() * a_b;
+  const Eigen::Vector3d zf_bar = Z_sync_.transpose() * zf_b;
 
-  Eigen::Vector3d b_bar_hat = estimatedBBarLocked();
-
-  Eigen::Vector3d y_s = b_bar_hat;
-  double k_dir = 0.0;
-  if (have_direction) {
-    const Eigen::Vector3d dir_vec = zf_bar - b_f_bar_hat_;
-    const double dir_norm = dir_vec.norm();
-    if (dir_norm > force_min_) {
-      y_s = dir_vec / dir_norm;
-      k_dir = k_b_;
-    }
-  }
-
-  // Group update on SO(3): exact left-right split for constant inputs.
-  const Eigen::Vector3d right_rot = nu_bar_hat_.cross(y_s);
-  const Eigen::Vector3d Ynu = Y_ * nu_bar_hat_;
-  const Eigen::Vector3d Yy = Y_ * y_s;
-  const Eigen::Vector3d left_rot =
-      Ynu.cross(Yy) - Ynu.cross(e3) + k_dir * Yy.cross(e3);
-  Y_ = expSO3(left_rot * dt) * Y_ * expSO3(right_rot * dt);
-  Y_ = projectToSO3(Y_);
-
-  b_bar_hat = estimatedBBarLocked();
-
+  const Eigen::Vector3d b_bar_hat = bBarHatLocked();
   const double tau_hat =
       payload_mass_ *
       (cable_length_ * nu_bar_hat_.squaredNorm() - b_bar_hat.dot(a_bar));
@@ -386,13 +363,35 @@ void PayloadEquivariantSyncObserverNodelet::propagateObserver(
     r_tau = tension_newton - (tau_hat + b_tau_hat_);
   }
 
+  Eigen::Vector3d y_s = b_bar_hat;
   Eigen::Vector3d r_f = Eigen::Vector3d::Zero();
   Eigen::Vector3d r_f_perp = Eigen::Vector3d::Zero();
+  double k_dir = 0.0;
+
   if (have_direction) {
+    const Eigen::Vector3d dir_vec = zf_bar - b_f_bar_hat_;
+    const double dir_norm = dir_vec.norm();
+    if (dir_norm > force_min_) {
+      y_s = dir_vec / dir_norm;
+      k_dir = k_b_;
+    }
     r_f = zf_bar - (tau_hat * b_bar_hat + b_f_bar_hat_);
     r_f_perp =
         (Eigen::Matrix3d::Identity() - b_bar_hat * b_bar_hat.transpose()) * r_f;
   }
+
+  // Correct group integration for the equivariant observer:
+  // Ydot = Y S(nu x b_hat) + DeltaY Y
+  // with DeltaY depending on the measurement y_s.
+  const Eigen::Vector3d right_rot = nu_bar_hat_.cross(b_bar_hat);
+  const Eigen::Vector3d Y_nu = Y_dir_ * nu_bar_hat_;
+  const Eigen::Vector3d Y_y = Y_dir_ * y_s;
+  const Eigen::Vector3d e3(0.0, 0.0, 1.0);
+  const Eigen::Vector3d delta_y =
+      Y_nu.cross(Y_y) - Y_nu.cross(e3) + k_dir * Y_y.cross(e3);
+
+  Y_dir_ = expSO3(delta_y * dt) * Y_dir_ * expSO3(right_rot * dt);
+  Y_dir_ = projectToSO3(Y_dir_);
 
   Eigen::Vector3d nu_dot =
       (1.0 / cable_length_) *
@@ -409,9 +408,6 @@ void PayloadEquivariantSyncObserverNodelet::propagateObserver(
   }
 
   nu_bar_hat_ += dt * nu_dot;
-  nu_bar_hat_ =
-      (Eigen::Matrix3d::Identity() - b_bar_hat * b_bar_hat.transpose()) *
-      nu_bar_hat_;
 
   if (have_tension) {
     b_tau_hat_ += dt * gamma_tau_ * r_tau;
@@ -425,23 +421,22 @@ void PayloadEquivariantSyncObserverNodelet::propagateObserver(
             .cwiseMin(max_bias_force_ * Eigen::Vector3d::Ones());
   }
 
-  // Optional: if tension is unavailable or below threshold, slowly relax force
-  // bias to avoid frozen bias when the cable is slack.
   if (!have_tension || tension_newton <= tau_min_) {
     b_f_bar_hat_ *= std::max(0.0, 1.0 - 0.1 * dt);
   }
 
-  normalizeObserverState();
+  normalizeObserverStateLocked();
 }
 
-void PayloadEquivariantSyncObserverNodelet::normalizeObserverState() {
-  Z_ = projectToSO3(Z_);
-  Y_ = projectToSO3(Y_);
+void PayloadSyncEquivariantObserverVerifiedNodelet::
+    normalizeObserverStateLocked() {
+  Z_sync_ = projectToSO3(Z_sync_);
+  Y_dir_ = projectToSO3(Y_dir_);
 
-  Eigen::Vector3d b_bar_hat = estimatedBBarLocked();
+  Eigen::Vector3d b_bar_hat = bBarHatLocked();
   if (!finiteVec(b_bar_hat) || b_bar_hat.norm() < 1e-9) {
-    Y_.setIdentity();
-    b_bar_hat = estimatedBBarLocked();
+    Y_dir_.setIdentity();
+    b_bar_hat = bBarHatLocked();
   }
 
   if (!finiteVec(nu_bar_hat_)) {
@@ -469,24 +464,25 @@ void PayloadEquivariantSyncObserverNodelet::normalizeObserverState() {
           .cwiseMin(max_bias_force_ * Eigen::Vector3d::Ones());
 }
 
-void PayloadEquivariantSyncObserverNodelet::cacheDebugValues(
-    const Eigen::Matrix3d &R_world_from_body, const Eigen::Vector3d &a_b,
+void PayloadSyncEquivariantObserverVerifiedNodelet::cacheDebugValuesLocked(
+    const Eigen::Matrix3d &R_wb, const Eigen::Vector3d &a_b,
     double thrust_newton, const Eigen::Vector3d &zf_b,
     const Eigen::Vector3d &raw_dir_body, double force_norm_body,
     bool have_tension, double tension_newton) {
   const Eigen::Vector3d e3(0.0, 0.0, 1.0);
-  last_force_inertial_ = R_world_from_body * (mass_ * a_b);
-  last_thrust_inertial_ = thrust_newton * (R_world_from_body * e3);
+  last_force_inertial_ = R_wb * (mass_ * a_b);
+  last_thrust_inertial_ = thrust_newton * (R_wb * e3);
   last_force_residual_body_ = zf_b;
-  last_force_residual_world_ = R_world_from_body * zf_b;
+  last_force_residual_world_ = R_wb * zf_b;
   last_raw_direction_body_ = raw_dir_body;
-  last_raw_direction_world_ = R_world_from_body * raw_dir_body;
+  last_raw_direction_world_ = R_wb * raw_dir_body;
+  last_a_body_ = a_b;
   last_force_norm_body_ = force_norm_body;
   last_tension_newton_ = tension_newton;
   last_have_tension_ = have_tension;
 }
 
-void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
+void PayloadSyncEquivariantObserverVerifiedNodelet::publishTimerCallback() {
   nav_msgs::msg::Odometry::SharedPtr odom;
   nav_msgs::msg::Odometry::SharedPtr payload_odom;
   {
@@ -505,15 +501,16 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
   Eigen::Vector3d b_f_bar_hat;
   bool initialized = false;
   double t_obs = -1.0;
-  Eigen::Vector3d force_inertial, thrust_inertial, zf_world, raw_dir_world;
+  Eigen::Vector3d force_inertial, thrust_inertial, zf_world, zf_body;
+  Eigen::Vector3d raw_dir_world, a_b;
   double force_norm_body = 0.0;
   double tension_newton = 0.0;
   bool have_tension = false;
 
   {
     std::lock_guard<std::mutex> lock(observer_mutex_);
-    Z = Z_;
-    Y = Y_;
+    Z = Z_sync_;
+    Y = Y_dir_;
     nu_bar_hat = nu_bar_hat_;
     b_tau_hat = b_tau_hat_;
     b_f_bar_hat = b_f_bar_hat_;
@@ -522,7 +519,9 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
     force_inertial = last_force_inertial_;
     thrust_inertial = last_thrust_inertial_;
     zf_world = last_force_residual_world_;
+    zf_body = last_force_residual_body_;
     raw_dir_world = last_raw_direction_world_;
+    a_b = last_a_body_;
     force_norm_body = last_force_norm_body_;
     tension_newton = last_tension_newton_;
     have_tension = last_have_tension_;
@@ -536,14 +535,10 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
   const Eigen::Vector3d p_q = odomPositionWorld(*odom);
   const Eigen::Vector3d v_q_w = odomVelocityWorld(*odom, R_wb);
 
-  const Eigen::Vector3d e3(0.0, 0.0, 1.0);
-  Eigen::Vector3d b_bar_hat = Y.transpose() * e3;
+  Eigen::Vector3d b_bar_hat = Y.transpose() * Eigen::Vector3d(0.0, 0.0, 1.0);
   if (b_bar_hat.norm() > 1e-9) {
     b_bar_hat.normalize();
-  } else {
-    b_bar_hat = Eigen::Vector3d(0.0, 0.0, -1.0);
   }
-
   const Eigen::Vector3d b_body_hat = Z * b_bar_hat;
   const Eigen::Vector3d n_world_hat = R_wb * b_body_hat;
   const Eigen::Vector3d q_world_hat = R_wb * (Z * nu_bar_hat);
@@ -557,22 +552,17 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
   publishFloatVector(
       pub_thrust_inertial_,
       {thrust_inertial.x(), thrust_inertial.y(), thrust_inertial.z()});
-  publishFloatVector(pub_cable_direction_,
+  publishFloatVector(pub_cable_direction_raw_,
                      {raw_dir_world.x(), raw_dir_world.y(), raw_dir_world.z(),
                       force_norm_body});
-
   publishFloatVector(pub_cable_direction_observer_,
                      {n_world_hat.x(), n_world_hat.y(), n_world_hat.z(),
                       b_body_hat.x(), b_body_hat.y(), b_body_hat.z(),
                       q_world_hat.x(), q_world_hat.y(), q_world_hat.z(),
                       nu_bar_hat.x(), nu_bar_hat.y(), nu_bar_hat.z()});
 
-  // Use synchronized residual relation for debug in a numerically explicit way.
-  const Eigen::Vector3d zf_body = R_wb.transpose() * zf_world;
-  const Eigen::Vector3d zf_bar = Z.transpose() * zf_body;
-  const Eigen::Vector3d A_world = force_inertial / std::max(1e-9, mass_);
-  const Eigen::Vector3d a_b = R_wb.transpose() * A_world;
   const Eigen::Vector3d a_bar = Z.transpose() * a_b;
+  const Eigen::Vector3d zf_bar = Z.transpose() * zf_body;
   const double tau_hat_dbg =
       payload_mass_ *
       (cable_length_ * nu_bar_hat.squaredNorm() - b_bar_hat.dot(a_bar));
@@ -602,7 +592,7 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
   nav_msgs::msg::Odometry payload_odom_msg;
   payload_odom_msg.header.stamp = stamp;
   payload_odom_msg.header.frame_id = frame_id_;
-  payload_odom_msg.child_frame_id = "payload_sync_equivariant";
+  payload_odom_msg.child_frame_id = "payload_sync_equivariant_verified";
   payload_odom_msg.pose.pose.position.x = p_payload_hat.x();
   payload_odom_msg.pose.pose.position.y = p_payload_hat.y();
   payload_odom_msg.pose.pose.position.z = p_payload_hat.z();
@@ -630,9 +620,8 @@ void PayloadEquivariantSyncObserverNodelet::publishTimerCallback() {
 }
 
 Eigen::Vector3d
-PayloadEquivariantSyncObserverNodelet::estimatedBBarLocked() const {
-  const Eigen::Vector3d e3(0.0, 0.0, 1.0);
-  Eigen::Vector3d b_bar = Y_.transpose() * e3;
+PayloadSyncEquivariantObserverVerifiedNodelet::bBarHatLocked() const {
+  Eigen::Vector3d b_bar = Y_dir_.transpose() * Eigen::Vector3d(0.0, 0.0, 1.0);
   if (b_bar.norm() > 1e-9) {
     b_bar.normalize();
   }
@@ -640,21 +629,21 @@ PayloadEquivariantSyncObserverNodelet::estimatedBBarLocked() const {
 }
 
 Eigen::Vector3d
-PayloadEquivariantSyncObserverNodelet::estimatedBBodyLocked() const {
-  return Z_ * estimatedBBarLocked();
+PayloadSyncEquivariantObserverVerifiedNodelet::bBodyHatLocked() const {
+  return Z_sync_ * bBarHatLocked();
 }
 
-Eigen::Vector3d PayloadEquivariantSyncObserverNodelet::estimatedNWorldLocked(
-    const Eigen::Matrix3d &R) const {
-  return R * estimatedBBodyLocked();
+Eigen::Vector3d PayloadSyncEquivariantObserverVerifiedNodelet::nWorldHatLocked(
+    const Eigen::Matrix3d &R_wb) const {
+  return R_wb * bBodyHatLocked();
 }
 
-Eigen::Vector3d PayloadEquivariantSyncObserverNodelet::estimatedQWorldLocked(
-    const Eigen::Matrix3d &R) const {
-  return R * (Z_ * nu_bar_hat_);
+Eigen::Vector3d PayloadSyncEquivariantObserverVerifiedNodelet::qWorldHatLocked(
+    const Eigen::Matrix3d &R_wb) const {
+  return R_wb * (Z_sync_ * nu_bar_hat_);
 }
 
-Eigen::Matrix3d PayloadEquivariantSyncObserverNodelet::quatToRot(
+Eigen::Matrix3d PayloadSyncEquivariantObserverVerifiedNodelet::quatToRot(
     const Eigen::Vector4d &q_wxyz) {
   Eigen::Quaterniond q(q_wxyz(0), q_wxyz(1), q_wxyz(2), q_wxyz(3));
   if (q.norm() < 1e-12) {
@@ -665,14 +654,14 @@ Eigen::Matrix3d PayloadEquivariantSyncObserverNodelet::quatToRot(
 }
 
 Eigen::Matrix3d
-PayloadEquivariantSyncObserverNodelet::skew(const Eigen::Vector3d &v) {
+PayloadSyncEquivariantObserverVerifiedNodelet::skew(const Eigen::Vector3d &v) {
   Eigen::Matrix3d S;
   S << 0.0, -v.z(), v.y(), v.z(), 0.0, -v.x(), -v.y(), v.x(), 0.0;
   return S;
 }
 
-Eigen::Matrix3d
-PayloadEquivariantSyncObserverNodelet::expSO3(const Eigen::Vector3d &w) {
+Eigen::Matrix3d PayloadSyncEquivariantObserverVerifiedNodelet::expSO3(
+    const Eigen::Vector3d &w) {
   const double theta = w.norm();
   const Eigen::Matrix3d W = skew(w);
   if (theta < 1e-9) {
@@ -683,8 +672,8 @@ PayloadEquivariantSyncObserverNodelet::expSO3(const Eigen::Vector3d &w) {
   return Eigen::Matrix3d::Identity() + a * W + b * W * W;
 }
 
-Eigen::Matrix3d
-PayloadEquivariantSyncObserverNodelet::projectToSO3(const Eigen::Matrix3d &R) {
+Eigen::Matrix3d PayloadSyncEquivariantObserverVerifiedNodelet::projectToSO3(
+    const Eigen::Matrix3d &R) {
   Eigen::JacobiSVD<Eigen::Matrix3d> svd(R, Eigen::ComputeFullU |
                                                Eigen::ComputeFullV);
   Eigen::Matrix3d U = svd.matrixU();
@@ -697,31 +686,45 @@ PayloadEquivariantSyncObserverNodelet::projectToSO3(const Eigen::Matrix3d &R) {
   return Rproj;
 }
 
-double PayloadEquivariantSyncObserverNodelet::stampToSec(
+Eigen::Matrix3d
+PayloadSyncEquivariantObserverVerifiedNodelet::liftFromDirection(
+    const Eigen::Vector3d &b_in) {
+  Eigen::Vector3d b = b_in;
+  if (b.norm() < 1e-9) {
+    return Eigen::Matrix3d::Identity();
+  }
+  b.normalize();
+
+  Eigen::Vector3d ref = (std::fabs(b.x()) < 0.9) ? Eigen::Vector3d::UnitX()
+                                                 : Eigen::Vector3d::UnitY();
+  Eigen::Vector3d x = ref - b * (b.dot(ref));
+  if (x.norm() < 1e-9) {
+    ref = Eigen::Vector3d::UnitZ();
+    x = ref - b * (b.dot(ref));
+  }
+  x.normalize();
+  Eigen::Vector3d y = b.cross(x);
+  y.normalize();
+
+  Eigen::Matrix3d R;
+  R.col(0) = x;
+  R.col(1) = y;
+  R.col(2) = b;
+  return R.transpose();
+}
+
+double PayloadSyncEquivariantObserverVerifiedNodelet::stampToSec(
     const builtin_interfaces::msg::Time &stamp) {
   return static_cast<double>(stamp.sec) +
          1e-9 * static_cast<double>(stamp.nanosec);
 }
 
-bool PayloadEquivariantSyncObserverNodelet::finiteVec(
+bool PayloadSyncEquivariantObserverVerifiedNodelet::finiteVec(
     const Eigen::Vector3d &v) {
   return std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
 }
 
-Eigen::Matrix3d
-PayloadEquivariantSyncObserverNodelet::rotationBToE3(const Eigen::Vector3d &b) {
-  Eigen::Vector3d bb = b;
-  if (bb.norm() < 1e-9) {
-    return Eigen::Matrix3d::Identity();
-  }
-  bb.normalize();
-  Eigen::Quaterniond q =
-      Eigen::Quaterniond::FromTwoVectors(bb, Eigen::Vector3d(0.0, 0.0, 1.0));
-  q.normalize();
-  return q.toRotationMatrix();
-}
-
-Eigen::Matrix3d PayloadEquivariantSyncObserverNodelet::odomRotation(
+Eigen::Matrix3d PayloadSyncEquivariantObserverVerifiedNodelet::odomRotation(
     const nav_msgs::msg::Odometry &odom) const {
   Eigen::Vector4d q_wxyz;
   q_wxyz << odom.pose.pose.orientation.w, odom.pose.pose.orientation.x,
@@ -729,28 +732,30 @@ Eigen::Matrix3d PayloadEquivariantSyncObserverNodelet::odomRotation(
   return quatToRot(q_wxyz);
 }
 
-Eigen::Vector3d PayloadEquivariantSyncObserverNodelet::odomPositionWorld(
+Eigen::Vector3d
+PayloadSyncEquivariantObserverVerifiedNodelet::odomPositionWorld(
     const nav_msgs::msg::Odometry &odom) const {
   return Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y,
                          odom.pose.pose.position.z);
 }
 
-Eigen::Vector3d PayloadEquivariantSyncObserverNodelet::odomVelocityWorld(
-    const nav_msgs::msg::Odometry &odom, const Eigen::Matrix3d &R) const {
+Eigen::Vector3d
+PayloadSyncEquivariantObserverVerifiedNodelet::odomVelocityWorld(
+    const nav_msgs::msg::Odometry &odom, const Eigen::Matrix3d &R_wb) const {
   Eigen::Vector3d v(odom.twist.twist.linear.x, odom.twist.twist.linear.y,
                     odom.twist.twist.linear.z);
   if (odom_twist_in_body_) {
-    v = R * v;
+    v = R_wb * v;
   }
   return v;
 }
 
-double PayloadEquivariantSyncObserverNodelet::tensionToNewton(
+double PayloadSyncEquivariantObserverVerifiedNodelet::tensionToNewton(
     const sensor_msgs::msg::FluidPressure &msg) const {
   return tension_scale_ * msg.fluid_pressure + tension_offset_;
 }
 
-double PayloadEquivariantSyncObserverNodelet::tensionVarianceNewton2(
+double PayloadSyncEquivariantObserverVerifiedNodelet::tensionVarianceNewton2(
     const sensor_msgs::msg::FluidPressure &msg) const {
   if (std::isfinite(msg.variance) && msg.variance > 0.0) {
     return std::max(1e-9, tension_scale_ * tension_scale_ * msg.variance);
@@ -758,12 +763,12 @@ double PayloadEquivariantSyncObserverNodelet::tensionVarianceNewton2(
   return std::max(1e-9, 1.0);
 }
 
-double PayloadEquivariantSyncObserverNodelet::thrustToNewton(
+double PayloadSyncEquivariantObserverVerifiedNodelet::thrustToNewton(
     const quadrotor_msgs::msg::TRPYCommand &msg) const {
   return thrust_scale_ * msg.thrust + thrust_offset_;
 }
 
-void PayloadEquivariantSyncObserverNodelet::publishFloatVector(
+void PayloadSyncEquivariantObserverVerifiedNodelet::publishFloatVector(
     const rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr &pub,
     const std::initializer_list<double> &values) const {
   if (!pub) {
@@ -774,6 +779,6 @@ void PayloadEquivariantSyncObserverNodelet::publishFloatVector(
   pub->publish(msg);
 }
 
-} // namespace payload_equivariant_sync_observer_nodelet
+} // namespace payload_sync_equivariant_observer_verified_nodelet
 
-RCLCPP_COMPONENTS_REGISTER_NODE(payload_equivariant_sync_observer_nodelet::PayloadEquivariantSyncObserverNodelet)
+RCLCPP_COMPONENTS_REGISTER_NODE(payload_sync_equivariant_observer_verified_nodelet::PayloadSyncEquivariantObserverVerifiedNodelet)

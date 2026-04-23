@@ -69,7 +69,7 @@ ament_target_dependencies(payload_equivariant_sync_observer_nodelet ${dependenci
 target_link_libraries(payload_equivariant_sync_observer_nodelet ${YAML_CPP_LIBRARIES})
 
 rclcpp_components_register_node(payload_equivariant_sync_observer_nodelet
-  PLUGIN "payload_equivariant_sync_observer_nodelet::PayloadEquivariantSyncObserverNodelet"
+  PLUGIN "payload_sync_equivariant_observer_verified_nodelet::PayloadSyncEquivariantObserverVerifiedNodelet"
   EXECUTABLE payload_equivariant_sync_observer_nodelet_exec)
 
 ament_export_libraries(

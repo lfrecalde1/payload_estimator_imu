@@ -15,12 +15,12 @@
 #include <mutex>
 #include <string>
 
-namespace payload_equivariant_sync_observer_nodelet {
+namespace payload_sync_equivariant_observer_verified_nodelet {
 
-class PayloadEquivariantSyncObserverNodelet : public rclcpp::Node {
+class PayloadSyncEquivariantObserverVerifiedNodelet : public rclcpp::Node {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  explicit PayloadEquivariantSyncObserverNodelet(
+  explicit PayloadSyncEquivariantObserverVerifiedNodelet(
       const rclcpp::NodeOptions &options);
 
 private:
@@ -35,48 +35,49 @@ private:
   void tensionCallback(const sensor_msgs::msg::FluidPressure::SharedPtr msg);
   void publishTimerCallback();
 
-  // High-rate IMU-driven observer.
+  // High-rate observer step.
   void processImu(const sensor_msgs::msg::Imu &imu_msg,
                   const nav_msgs::msg::Odometry::SharedPtr &odom,
                   const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
                   const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
                   const nav_msgs::msg::Odometry::SharedPtr &payload_odom);
 
-  // Observer core. Call only while holding observer_mutex_.
-  void initializeObserver(const Eigen::Vector3d &b0_body,
-                          const Eigen::Vector3d &a_b,
-                          const Eigen::Vector3d &zf_b, bool have_tension,
-                          double tension_newton, double stamp_sec);
-  void propagateObserver(double dt, const Eigen::Vector3d &omega_b,
-                         const Eigen::Vector3d &a_b,
-                         const Eigen::Vector3d &zf_b, bool have_direction,
-                         bool have_tension, double tension_newton);
-  void normalizeObserverState();
-  void cacheDebugValues(const Eigen::Matrix3d &R_world_from_body,
-                        const Eigen::Vector3d &a_b, double thrust_newton,
-                        const Eigen::Vector3d &zf_b,
-                        const Eigen::Vector3d &raw_dir_body,
-                        double force_norm_body, bool have_tension,
-                        double tension_newton);
+  // Observer core. Hold observer_mutex_ when calling these.
+  void initializeObserverLocked(const Eigen::Vector3d &b0_body,
+                                const Eigen::Vector3d &a_b,
+                                const Eigen::Vector3d &zf_b, bool have_tension,
+                                double tension_newton, double stamp_sec);
+  void propagateObserverLocked(double dt, const Eigen::Vector3d &omega_b,
+                               const Eigen::Vector3d &a_b,
+                               const Eigen::Vector3d &zf_b, bool have_direction,
+                               bool have_tension, double tension_newton);
+  void normalizeObserverStateLocked();
+  void cacheDebugValuesLocked(const Eigen::Matrix3d &R_wb,
+                              const Eigen::Vector3d &a_b, double thrust_newton,
+                              const Eigen::Vector3d &zf_b,
+                              const Eigen::Vector3d &raw_dir_body,
+                              double force_norm_body, bool have_tension,
+                              double tension_newton);
 
-  // Small helpers.
-  Eigen::Vector3d estimatedBBarLocked() const;
-  Eigen::Vector3d estimatedBBodyLocked() const;
-  Eigen::Vector3d estimatedNWorldLocked(const Eigen::Matrix3d &R) const;
-  Eigen::Vector3d estimatedQWorldLocked(const Eigen::Matrix3d &R) const;
+  // Helper accessors. Hold observer_mutex_.
+  Eigen::Vector3d bBarHatLocked() const;
+  Eigen::Vector3d bBodyHatLocked() const;
+  Eigen::Vector3d nWorldHatLocked(const Eigen::Matrix3d &R_wb) const;
+  Eigen::Vector3d qWorldHatLocked(const Eigen::Matrix3d &R_wb) const;
 
+  // Math helpers.
   static Eigen::Matrix3d quatToRot(const Eigen::Vector4d &q_wxyz);
   static Eigen::Matrix3d skew(const Eigen::Vector3d &v);
   static Eigen::Matrix3d expSO3(const Eigen::Vector3d &w);
   static Eigen::Matrix3d projectToSO3(const Eigen::Matrix3d &R);
+  static Eigen::Matrix3d liftFromDirection(const Eigen::Vector3d &b);
   static double stampToSec(const builtin_interfaces::msg::Time &stamp);
   static bool finiteVec(const Eigen::Vector3d &v);
-  static Eigen::Matrix3d rotationBToE3(const Eigen::Vector3d &b);
 
   Eigen::Matrix3d odomRotation(const nav_msgs::msg::Odometry &odom) const;
   Eigen::Vector3d odomPositionWorld(const nav_msgs::msg::Odometry &odom) const;
   Eigen::Vector3d odomVelocityWorld(const nav_msgs::msg::Odometry &odom,
-                                    const Eigen::Matrix3d &R) const;
+                                    const Eigen::Matrix3d &R_wb) const;
 
   double tensionToNewton(const sensor_msgs::msg::FluidPressure &msg) const;
   double
@@ -88,25 +89,25 @@ private:
       const std::initializer_list<double> &values) const;
 
   // Parameters.
-  double mass_{1.24};         // Quadrotor mass [kg].
-  double payload_mass_{0.20}; // Payload mass [kg].
-  double gravity_{9.81};      // Gravity magnitude [m/s^2].
-  double cable_length_{0.76}; // Cable length [m].
+  double mass_{1.24};
+  double payload_mass_{0.20};
+  double gravity_{9.81};
+  double cable_length_{0.76};
 
-  double thrust_scale_{1.0};   // Converts trpy thrust to Newtons.
-  double thrust_offset_{0.0};  // Thrust offset [N].
-  double tension_scale_{1.0};  // Converts FluidPressure field to Newtons.
-  double tension_offset_{0.0}; // Tension offset [N].
+  double thrust_scale_{1.0};
+  double thrust_offset_{0.0};
+  double tension_scale_{1.0};
+  double tension_offset_{0.0};
 
-  double tau_min_{0.10};         // Minimum taut tension [N].
-  double force_min_{0.20};       // Minimum valid cable force residual [N].
-  double tension_timeout_{0.05}; // Maximum tension age relative to IMU [s].
-  double odom_timeout_{0.10};    // Maximum odom age relative to IMU [s].
+  double tau_min_{0.10};
+  double force_min_{0.20};
+  double tension_timeout_{0.05};
+  double odom_timeout_{0.10};
   double max_prediction_dt_{0.005};
   double reset_dt_{0.25};
   double publish_rate_{100.0};
 
-  double drag_x_{0.0}; // Body-frame drag model coefficients.
+  double drag_x_{0.0};
   double drag_y_{0.0};
   double drag_z_{0.0};
 
@@ -115,18 +116,16 @@ private:
   bool use_tension_update_{true};
 
   // Observer gains.
-  double k_b_{4.0};        // SO(3) direction correction gain.
-  double k_nu_force_{8.0}; // Tangent velocity correction from force residual.
-  double gamma_tau_{2.0};  // Tension bias adaptation gain.
-  double gamma_f_{3.0};    // Force-bias adaptation gain.
+  double k_b_{8.0};
+  double k_nu_force_{12.0};
+  double gamma_tau_{2.0};
+  double gamma_f_{3.0};
 
-  // Saturations / safety.
+  // Safety / saturation.
   double max_bias_force_{20.0};
   double max_bias_tension_{20.0};
   double max_nu_norm_{30.0};
-
-  // Initialization.
-  double init_bias_force_scale_{1.0};
+  double init_force_bias_scale_{1.0};
 
   std::string frame_id_{"world"};
   Eigen::Matrix3d inertia_{Eigen::Matrix3d::Zero()};
@@ -139,10 +138,10 @@ private:
   quadrotor_msgs::msg::TRPYCommand::SharedPtr last_trpy_;
   sensor_msgs::msg::FluidPressure::SharedPtr last_tension_;
 
-  // Observer state and debug cache.
+  // Observer state.
   mutable std::mutex observer_mutex_;
-  Eigen::Matrix3d Z_{Eigen::Matrix3d::Identity()}; // synchronous rotation
-  Eigen::Matrix3d Y_{Eigen::Matrix3d::Identity()}; // lifted synchronized dir
+  Eigen::Matrix3d Z_sync_{Eigen::Matrix3d::Identity()};
+  Eigen::Matrix3d Y_dir_{Eigen::Matrix3d::Identity()};
   Eigen::Vector3d nu_bar_hat_{Eigen::Vector3d::Zero()};
   double b_tau_hat_{0.0};
   Eigen::Vector3d b_f_bar_hat_{Eigen::Vector3d::Zero()};
@@ -150,13 +149,14 @@ private:
   bool observer_initialized_{false};
   double last_observer_time_{-1.0};
 
-  // Cached debug values for fixed-rate publishing.
+  // Fixed-rate publishing cache.
   Eigen::Vector3d last_force_inertial_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_thrust_inertial_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_force_residual_world_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_force_residual_body_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_raw_direction_body_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_raw_direction_world_{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d last_a_body_{Eigen::Vector3d::Zero()};
   double last_force_norm_body_{0.0};
   double last_tension_newton_{0.0};
   bool last_have_tension_{false};
@@ -173,7 +173,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       pub_thrust_inertial_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
-      pub_cable_direction_;
+      pub_cable_direction_raw_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       pub_cable_direction_observer_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
@@ -187,4 +187,4 @@ private:
   rclcpp::TimerBase::SharedPtr publish_timer_;
 };
 
-} // namespace payload_equivariant_sync_observer_nodelet
+} // namespace payload_sync_equivariant_observer_verified_nodelet
