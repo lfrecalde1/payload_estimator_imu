@@ -111,7 +111,7 @@ private:
   double publish_rate_{100.0};
 
   bool use_force_update_{true};
-  bool use_tension_update_{false};
+  bool use_tension_update_{true};
 
   // Discrete process/measurement tuning.
   double q_n_{1e-5};
@@ -122,9 +122,9 @@ private:
 
   double q_b_force_{1e-4};
 
-  double r_force_perp_{0.10};
-  double r_force_parallel_{1.00};
-  double r_tension_{0.10};
+  double r_force_perp_{0.40};
+  double r_force_parallel_{2.00};
+  double r_tension_{0.40};
 
   // Initial covariance.
   double p0_n_{0.10};
