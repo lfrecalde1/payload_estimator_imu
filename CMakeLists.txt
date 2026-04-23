@@ -55,12 +55,34 @@ rclcpp_components_register_node(payload_estimator_imu_nodelet
   PLUGIN "payload_estimator_imu_nodelet::PayloadEstimatorNodelet"
   EXECUTABLE payload_estimator_imu_nodelet_exec)
 
-ament_export_libraries(payload_estimator_imu_nodelet)
+add_library(payload_equivariant_sync_observer_nodelet SHARED
+  src/payload_equivariant_sync_observer_nodelet.cpp
+)
+set_target_properties(payload_equivariant_sync_observer_nodelet PROPERTIES COMPILE_DEFINITIONS "COMPOSITION_BUILDING_DLL")
+
+target_include_directories(payload_equivariant_sync_observer_nodelet PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(payload_equivariant_sync_observer_nodelet ${dependencies})
+target_link_libraries(payload_equivariant_sync_observer_nodelet ${YAML_CPP_LIBRARIES})
+
+rclcpp_components_register_node(payload_equivariant_sync_observer_nodelet
+  PLUGIN "payload_equivariant_sync_observer_nodelet::PayloadEquivariantSyncObserverNodelet"
+  EXECUTABLE payload_equivariant_sync_observer_nodelet_exec)
+
+ament_export_libraries(
+  payload_estimator_imu_nodelet
+  payload_equivariant_sync_observer_nodelet
+)
 ament_export_dependencies(${dependencies})
 
 install(TARGETS
   payload_estimator_imu_nodelet
   payload_estimator_imu_nodelet_exec
+  payload_equivariant_sync_observer_nodelet
+  payload_equivariant_sync_observer_nodelet_exec
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
