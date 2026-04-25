@@ -93,7 +93,7 @@ private:
 
   double payload_mass_{0.20};
   double gravity_{9.81};
-  double cable_length_{0.76};
+  double cable_length_{0.85};
 
   double tau_min_{0.10};
   double force_min_{0.20};
@@ -108,10 +108,15 @@ private:
 
   double reset_dt_{0.25};
 
+  double x_opt_0_{1.918101009211921e-06};
+  double x_opt_1_{-5.632268117969789e-07};
+  double x_opt_2_{3.648328641889230e-06};
+  double x_opt_3_{2.235703364573816e-06};
+
   double publish_rate_{100.0};
 
   bool use_force_update_{true};
-  bool use_tension_update_{true};
+  bool use_tension_update_{false};
 
   // Discrete process/measurement tuning.
   double q_n_{1e-5};
@@ -122,9 +127,9 @@ private:
 
   double q_b_force_{1e-4};
 
-  double r_force_perp_{0.40};
+  double r_force_perp_{0.10};
   double r_force_parallel_{2.00};
-  double r_tension_{0.40};
+  double r_tension_{0.10};
 
   // Initial covariance.
   double p0_n_{0.10};

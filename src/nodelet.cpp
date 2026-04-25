@@ -15,7 +15,7 @@ PayloadEstimatorNodelet::PayloadEstimatorNodelet(
   mass_ = 1.24;
   payload_mass_ = 0.20;
   gravity_ = 9.81;
-  cable_length_ = 0.76;
+  cable_length_ = 0.85;
   inertia_.setZero();
   inertia_(0, 0) = 0.00360915;
   inertia_(1, 1) = 0.00188875;
@@ -66,22 +66,22 @@ PayloadEstimatorNodelet::PayloadEstimatorNodelet(
   const auto qos = rclcpp::SensorDataQoS();
 
   sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/quadrotor/odom", qos,
+      "/eagle11/odom", qos,
       std::bind(&PayloadEstimatorNodelet::odomCallback, this,
                 std::placeholders::_1));
 
   sub_payload_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/quadrotor/payload/odom", qos,
+      "/eagle11/payload/odom", qos,
       std::bind(&PayloadEstimatorNodelet::payloadOdomCallback, this,
                 std::placeholders::_1));
 
   sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
-      "/quadrotor/imu", qos,
+      "/eagle11/imu", qos,
       std::bind(&PayloadEstimatorNodelet::imuCallback, this,
                 std::placeholders::_1));
 
   sub_trpy_ = this->create_subscription<quadrotor_msgs::msg::TRPYCommand>(
-      "/quadrotor/trpy_cmd", qos,
+      "/eagle11/trpy_cmd", qos,
       std::bind(&PayloadEstimatorNodelet::trpyCallback, this,
                 std::placeholders::_1));
 

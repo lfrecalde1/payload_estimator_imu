@@ -116,10 +116,10 @@ private:
   bool use_tension_update_{true};
 
   // Observer gains.
-  double k_b_{8.0};
-  double k_nu_force_{12.0};
-  double gamma_tau_{2.0};
-  double gamma_f_{3.0};
+  double k_b_{3.0};
+  double k_nu_force_{2.0};
+  double gamma_tau_{1.0};
+  double gamma_f_{1.0};
 
   // Safety / saturation.
   double max_bias_force_{20.0};

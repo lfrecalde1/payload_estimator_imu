@@ -781,4 +781,6 @@ void PayloadSyncEquivariantObserverVerifiedNodelet::publishFloatVector(
 
 } // namespace payload_sync_equivariant_observer_verified_nodelet
 
-RCLCPP_COMPONENTS_REGISTER_NODE(payload_sync_equivariant_observer_verified_nodelet::PayloadSyncEquivariantObserverVerifiedNodelet)
+RCLCPP_COMPONENTS_REGISTER_NODE(
+    payload_sync_equivariant_observer_verified_nodelet::
+        PayloadSyncEquivariantObserverVerifiedNodelet)
