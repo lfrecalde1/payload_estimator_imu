@@ -1,5 +1,6 @@
 #include "payload_estimator_imu/nodelet.hpp"
 
+#include <quadrotor_msgs/msg/detail/beta_flight_states__struct.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 
 #include <algorithm>
@@ -12,81 +13,76 @@ namespace payload_estimator_imu_nodelet {
 PayloadEstimatorNodelet::PayloadEstimatorNodelet(
     const rclcpp::NodeOptions &options)
     : Node("payload_estimator_imu_nodelet", options) {
+
   mass_ = 1.24;
   payload_mass_ = 0.20;
   gravity_ = 9.81;
   cable_length_ = 0.88;
+
   inertia_.setZero();
   inertia_(0, 0) = 0.00360915;
   inertia_(1, 1) = 0.00188875;
   inertia_(2, 2) = 0.00188864;
 
   declareAndReadParam("mass", mass_, "%.6f");
-  declareAndReadParam("payload_mass", payload_mass_, "%.6f");
+  declareAndReadParam("mass_payload", payload_mass_, "%.6f");
 
   declareAndReadParam("gravity", gravity_, "%.6f");
   declareAndReadParam("cable_length", cable_length_, "%.6f");
-
-  declareAndReadParam("tau_min", tau_min_, "%.6f");
-  declareAndReadParam("force_min", force_min_, "%.6f");
-
-  declareAndReadParam("tension_timeout", tension_timeout_, "%.6f");
-
-  declareAndReadParam("odom_timeout", odom_timeout_, "%.6f");
-
-  declareAndReadParam("max_prediction_dt", max_prediction_dt_, "%.6f");
-
-  declareAndReadParam("reset_dt", reset_dt_, "%.6f");
-  declareAndReadParam("publish_rate", publish_rate_, "%.6f");
-
-  declareAndReadParam("use_force_update", use_force_update_, "%d");
-  declareAndReadParam("use_tension_update", use_tension_update_, "%d");
-
-  declareAndReadParam("q_n", q_n_, "%.8f");
-  declareAndReadParam("q_q", q_q_, "%.8f");
-  declareAndReadParam("q_b_tau", q_b_tau_, "%.8f");
-  declareAndReadParam("q_b_force", q_b_force_, "%.8f");
-
-  declareAndReadParam("r_force_perp", r_force_perp_, "%.6f");
-  declareAndReadParam("r_force_parallel", r_force_parallel_, "%.6f");
-
-  declareAndReadParam("r_tension", r_tension_, "%.6f");
-
-  declareAndReadParam("p0_n", p0_n_, "%.6f");
-  declareAndReadParam("p0_q", p0_q_, "%.6f");
-  declareAndReadParam("p0_b_tau", p0_b_tau_, "%.6f");
-  declareAndReadParam("p0_b_force", p0_b_force_, "%.6f");
 
   declareAndReadParam("ixx", inertia_(0, 0), "%.6f");
   declareAndReadParam("iyy", inertia_(1, 1), "%.6f");
   declareAndReadParam("izz", inertia_(2, 2), "%.6f");
 
-  declareAndReadParam("frame_id", frame_id_, "%s");
+  declareAndReadParam("ekf_payload.q_n_x", q_n_x_, "%.6f");
+  declareAndReadParam("ekf_payload.q_n_y", q_n_y_, "%.6f");
+  declareAndReadParam("ekf_payload.q_n_z", q_n_z_, "%.6f");
+
+  declareAndReadParam("ekf_payload.q_q_x", q_q_x_, "%.6f");
+  declareAndReadParam("ekf_payload.q_q_y", q_q_y_, "%.6f");
+  declareAndReadParam("ekf_payload.q_q_z", q_q_z_, "%.6f");
+
+  declareAndReadParam("ekf_payload.q_b_tau", q_b_tau_, "%.6f");
+
+  declareAndReadParam("ekf_payload.q_b_force_x", q_b_force_x_, "%.6f");
+  declareAndReadParam("ekf_payload.q_b_force_y", q_b_force_y_, "%.6f");
+  declareAndReadParam("ekf_payload.q_b_force_z", q_b_force_z_, "%.6f");
+
+  declareAndReadParam("ekf_payload.r_force_perp", r_force_perp_, "%.6f");
+  declareAndReadParam("ekf_payload.r_force_parallel", r_force_parallel_,
+                      "%.6f");
+  declareAndReadParam("ekf_payload.r_tension", r_tension_, "%.6f");
 
   const auto qos = rclcpp::SensorDataQoS();
 
   sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/eagle11/odom", qos,
+      "odom", qos,
       std::bind(&PayloadEstimatorNodelet::odomCallback, this,
                 std::placeholders::_1));
 
   sub_payload_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/eagle11/payload/odom", qos,
+      "payload/odom", qos,
       std::bind(&PayloadEstimatorNodelet::payloadOdomCallback, this,
                 std::placeholders::_1));
 
   sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
-      "/eagle11/imu", qos,
+      "imu", qos,
       std::bind(&PayloadEstimatorNodelet::imuCallback, this,
                 std::placeholders::_1));
 
   sub_trpy_ = this->create_subscription<quadrotor_msgs::msg::TRPYCommand>(
-      "/eagle11/trpy_cmd", qos,
+      "trpy_cmd", qos,
       std::bind(&PayloadEstimatorNodelet::trpyCallback, this,
                 std::placeholders::_1));
 
+  sub_betaflight_ =
+      this->create_subscription<quadrotor_msgs::msg::BetaFlightStates>(
+          "betaflight", qos,
+          std::bind(&PayloadEstimatorNodelet::betaflightCallback, this,
+                    std::placeholders::_1));
+
   sub_tension_ = this->create_subscription<sensor_msgs::msg::FluidPressure>(
-      "/quadrotor/rope0/tension", qos,
+      "rope0/tension", qos,
       std::bind(&PayloadEstimatorNodelet::tensionCallback, this,
                 std::placeholders::_1));
 
@@ -174,6 +170,7 @@ void PayloadEstimatorNodelet::imuCallback(
   nav_msgs::msg::Odometry::SharedPtr odom;
   nav_msgs::msg::Odometry::SharedPtr payload_odom;
   quadrotor_msgs::msg::TRPYCommand::SharedPtr trpy;
+  quadrotor_msgs::msg::BetaFlightStates::SharedPtr betaflight;
   sensor_msgs::msg::FluidPressure::SharedPtr tension;
 
   {
@@ -183,15 +180,22 @@ void PayloadEstimatorNodelet::imuCallback(
     payload_odom = last_payload_odom_;
     trpy = last_trpy_;
     tension = last_tension_;
+    betaflight = last_betaflight_;
   }
 
-  processImu(*msg, odom, trpy, tension, payload_odom);
+  processImu(*msg, odom, trpy, tension, payload_odom, betaflight);
 }
 
 void PayloadEstimatorNodelet::trpyCallback(
     const quadrotor_msgs::msg::TRPYCommand::SharedPtr msg) {
   std::lock_guard<std::mutex> lock(data_mutex_);
   last_trpy_ = msg;
+}
+
+void PayloadEstimatorNodelet::betaflightCallback(
+    const quadrotor_msgs::msg::BetaFlightStates::SharedPtr msg) {
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  last_betaflight_ = msg;
 }
 
 void PayloadEstimatorNodelet::tensionCallback(
@@ -208,7 +212,8 @@ void PayloadEstimatorNodelet::processImu(
     const nav_msgs::msg::Odometry::SharedPtr &odom,
     const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
     const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
-    const nav_msgs::msg::Odometry::SharedPtr &payload_odom) {
+    const nav_msgs::msg::Odometry::SharedPtr &payload_odom,
+    const quadrotor_msgs::msg::BetaFlightStates::SharedPtr &betaflight) {
 
   if (!odom || !trpy) {
     return;
@@ -298,8 +303,6 @@ void PayloadEstimatorNodelet::processImu(
       t_imu > last_force_update_time_ + 1e-9) {
     if (updateForceResidual(force_residual, A_world, tension_newton)) {
       last_force_update_time_ = t_imu;
-      RCLCPP_INFO(this->get_logger(),
-                  "[payload_estimator_imu] Using Force Error");
     }
   }
 
@@ -307,8 +310,6 @@ void PayloadEstimatorNodelet::processImu(
       tension_stamp > last_tension_update_time_ + 1e-9) {
     if (updateTension(tension_newton, tension_var, A_world)) {
       last_tension_update_time_ = tension_stamp;
-      RCLCPP_INFO(this->get_logger(),
-                  "[payload_estimator_imu] Using Tension Error");
     }
   }
 
@@ -543,10 +544,14 @@ void PayloadEstimatorNodelet::predictFilter(double dt,
       Eigen::Matrix<double, 10, 10>::Identity() + F * dt;
 
   Eigen::Matrix<double, 10, 10> Q = Eigen::Matrix<double, 10, 10>::Zero();
-  Q.block<3, 3>(0, 0) = q_n_ * dt * Eigen::Matrix3d::Identity();
-  Q.block<3, 3>(3, 3) = q_q_ * dt * Eigen::Matrix3d::Identity();
+  Q.block<3, 3>(0, 0) =
+      dt * Eigen::Vector3d(q_n_x_, q_n_y_, q_n_z_).asDiagonal();
+  Q.block<3, 3>(3, 3) =
+      dt * Eigen::Vector3d(q_q_x_, q_q_y_, q_q_z_).asDiagonal();
   Q(6, 6) = q_b_tau_ * dt;
-  Q.block<3, 3>(7, 7) = q_b_force_ * dt * Eigen::Matrix3d::Identity();
+  Q.block<3, 3>(7, 7) =
+      dt *
+      Eigen::Vector3d(q_b_force_x_, q_b_force_y_, q_b_force_z_).asDiagonal();
 
   P_ = Phi * P_ * Phi.transpose() + Q;
   symmetrizeCovariance();
@@ -577,12 +582,8 @@ bool PayloadEstimatorNodelet::updateForceResidual(
   const Eigen::Matrix3d Pn = n * n.transpose();
   const Eigen::Matrix3d Pt = Eigen::Matrix3d::Identity() - Pn;
 
-  double scale = 1.0;
-
-  Eigen::Matrix3d Rm = (r_force_perp_ * r_force_perp_ * scale) * Pt +
+  Eigen::Matrix3d Rm = (r_force_perp_ * r_force_perp_) * Pt +
                        (r_force_parallel_ * r_force_parallel_) * Pn;
-  Rm += 1e-9 * Eigen::Matrix3d::Identity();
-
   const Eigen::Matrix3d S = H * P_ * H.transpose() + Rm;
 
   const Eigen::Matrix<double, 10, 3> K =
@@ -744,6 +745,17 @@ double PayloadEstimatorNodelet::tensionVarianceNewton2(
 double PayloadEstimatorNodelet::thrustToNewton(
     const quadrotor_msgs::msg::TRPYCommand &msg) const {
   return msg.thrust;
+}
+
+double PayloadEstimatorNodelet::rpmToNewton(
+    const quadrotor_msgs::msg::BetaFlightStates &msg) const {
+  double motor_0 = msg.motor[0];
+  double motor_1 = msg.motor[1];
+  double motor_2 = msg.motor[2];
+  double motor_3 = msg.motor[3];
+  double force = x_opt_0_ * motor_0 * motor_0 + x_opt_1_ * motor_1 * motor_1 +
+                 x_opt_2_ * motor_2 * motor_2 + x_opt_3_ * motor_3 * motor_3;
+  return force;
 }
 
 void PayloadEstimatorNodelet::publishFloatVector(

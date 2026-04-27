@@ -65,24 +65,24 @@ PayloadSyncEquivariantObserverVerifiedNodelet::
   const auto qos = rclcpp::SensorDataQoS();
 
   sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/quadrotor/odom", qos,
+      "/eagle11/odom", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::odomCallback,
                 this, std::placeholders::_1));
   sub_payload_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/quadrotor/payload/odom", qos,
+      "/eagle11/payload/odom", qos,
       std::bind(
           &PayloadSyncEquivariantObserverVerifiedNodelet::payloadOdomCallback,
           this, std::placeholders::_1));
   sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
-      "/quadrotor/imu", qos,
+      "/eagle11/imu", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::imuCallback,
                 this, std::placeholders::_1));
   sub_trpy_ = this->create_subscription<quadrotor_msgs::msg::TRPYCommand>(
-      "/quadrotor/trpy_cmd", qos,
+      "/eagle11/trpy_cmd", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::trpyCallback,
                 this, std::placeholders::_1));
   sub_tension_ = this->create_subscription<sensor_msgs::msg::FluidPressure>(
-      "/quadrotor/rope0/tension", qos,
+      "/eagle11/rope0/tension", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::tensionCallback,
                 this, std::placeholders::_1));
 

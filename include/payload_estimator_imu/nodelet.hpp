@@ -5,6 +5,8 @@
 #include <eigen3/Eigen/Geometry>
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <quadrotor_msgs/msg/beta_flight_states.hpp>
+#include <quadrotor_msgs/msg/detail/beta_flight_states__struct.hpp>
 #include <quadrotor_msgs/msg/trpy_command.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/fluid_pressure.hpp>
@@ -34,16 +36,21 @@ private:
 
   void trpyCallback(const quadrotor_msgs::msg::TRPYCommand::SharedPtr msg);
 
+  void betaflightCallback(
+      const quadrotor_msgs::msg::BetaFlightStates::SharedPtr msg);
+
   void tensionCallback(const sensor_msgs::msg::FluidPressure::SharedPtr msg);
 
   void publishTimerCallback();
 
   // High-rate IMU-driven estimator.
-  void processImu(const sensor_msgs::msg::Imu &imu_msg,
-                  const nav_msgs::msg::Odometry::SharedPtr &odom,
-                  const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
-                  const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
-                  const nav_msgs::msg::Odometry::SharedPtr &payload_odom);
+  void processImu(
+      const sensor_msgs::msg::Imu &imu_msg,
+      const nav_msgs::msg::Odometry::SharedPtr &odom,
+      const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
+      const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
+      const nav_msgs::msg::Odometry::SharedPtr &payload_odom,
+      const quadrotor_msgs::msg::BetaFlightStates::SharedPtr &betaflight);
 
   // EKF core. Call only while holding filter_mutex_.
   void initializeFilter(const Eigen::Vector3d &n0,
@@ -83,6 +90,7 @@ private:
   double
   tensionVarianceNewton2(const sensor_msgs::msg::FluidPressure &msg) const;
   double thrustToNewton(const quadrotor_msgs::msg::TRPYCommand &msg) const;
+  double rpmToNewton(const quadrotor_msgs::msg::BetaFlightStates &msg) const;
 
   void publishFloatVector(
       const rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr &pub,
@@ -93,7 +101,7 @@ private:
 
   double payload_mass_{0.20};
   double gravity_{9.81};
-  double cable_length_{0.85};
+  double cable_length_{0.88};
 
   double tau_min_{0.10};
   double force_min_{0.20};
@@ -119,13 +127,19 @@ private:
   bool use_tension_update_{false};
 
   // Discrete process/measurement tuning.
-  double q_n_{1e-5};
+  double q_n_x_{1e-5};
+  double q_n_y_{1e-5};
+  double q_n_z_{1e-5};
 
-  double q_q_{5e-4};
+  double q_q_x_{5e-4};
+  double q_q_y_{5e-4};
+  double q_q_z_{5e-4};
 
   double q_b_tau_{1e-6};
 
-  double q_b_force_{1e-4};
+  double q_b_force_x_{1e-4};
+  double q_b_force_y_{1e-4};
+  double q_b_force_z_{1e-4};
 
   double r_force_perp_{0.10};
   double r_force_parallel_{2.00};
@@ -149,6 +163,7 @@ private:
   nav_msgs::msg::Odometry::SharedPtr last_payload_odom_;
   sensor_msgs::msg::Imu::SharedPtr last_imu_;
   quadrotor_msgs::msg::TRPYCommand::SharedPtr last_trpy_;
+  quadrotor_msgs::msg::BetaFlightStates::SharedPtr last_betaflight_;
   sensor_msgs::msg::FluidPressure::SharedPtr last_tension_;
 
   // Filter state and debug cache.
@@ -177,6 +192,8 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_payload_odom_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
   rclcpp::Subscription<quadrotor_msgs::msg::TRPYCommand>::SharedPtr sub_trpy_;
+  rclcpp::Subscription<quadrotor_msgs::msg::BetaFlightStates>::SharedPtr
+      sub_betaflight_;
   rclcpp::Subscription<sensor_msgs::msg::FluidPressure>::SharedPtr sub_tension_;
 
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
