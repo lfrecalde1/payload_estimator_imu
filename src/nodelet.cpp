@@ -365,6 +365,10 @@ void PayloadEstimatorNodelet::publishTimerCallback() {
   const Eigen::Vector3d p_payload_est = p_q + cable_length_ * n_hat;
   const Eigen::Vector3d v_payload_est = v_q + cable_length_ * q_hat;
 
+  // Copmute angular velocity payload just for debug purpose
+  Eigen::Vector3d w_hat;
+  w_hat = n_hat.cross(q_hat);
+
   publishFloatVector(
       pub_force_inertial_,
       {force_inertial.x(), force_inertial.y(), force_inertial.z()});
@@ -380,7 +384,8 @@ void PayloadEstimatorNodelet::publishTimerCallback() {
 
   publishFloatVector(pub_cable_direction_ekf_,
                      {n_hat.x(), n_hat.y(), n_hat.z(), n_hat.norm(), q_hat.x(),
-                      q_hat.y(), q_hat.z(), q_hat.norm()});
+                      q_hat.y(), q_hat.z(), q_hat.norm(), w_hat.x(), w_hat.y(),
+                      w_hat.z()});
 
   builtin_interfaces::msg::Time stamp = odom->header.stamp;
   if (filter_time > 0.0) {
