@@ -113,10 +113,12 @@ private:
 
   double reset_dt_{0.25};
 
-  double x_opt_0_{1.918101009211921e-06};
-  double x_opt_1_{-5.632268117969789e-07};
-  double x_opt_2_{3.648328641889230e-06};
-  double x_opt_3_{2.235703364573816e-06};
+  // This parameters depends on the mass of the quadrotors for this case the
+  // mass should be 1.24 kg
+  double x_opt_0_{-2.285124466359823e-06};
+  double x_opt_1_{-2.123812587189177e-06};
+  double x_opt_2_{5.827096282037448e-06};
+  double x_opt_3_{6.552086844852700e-06};
 
   double publish_rate_{100.0};
 
