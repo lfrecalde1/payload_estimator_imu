@@ -81,6 +81,12 @@ PayloadSyncEquivariantObserverVerifiedNodelet::
       "/eagle11/trpy_cmd", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::trpyCallback,
                 this, std::placeholders::_1));
+
+  sub_trpy_ = this->create_subscription<quadrotor_msgs::msg::TRPYCommand>(
+      "/eagle11/betaflight", qos,
+      std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::trpyCallback,
+                this, std::placeholders::_1));
+
   sub_tension_ = this->create_subscription<sensor_msgs::msg::FluidPressure>(
       "/eagle11/rope0/tension", qos,
       std::bind(&PayloadSyncEquivariantObserverVerifiedNodelet::tensionCallback,

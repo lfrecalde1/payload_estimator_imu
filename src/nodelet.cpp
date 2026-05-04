@@ -53,16 +53,13 @@ PayloadEstimatorNodelet::PayloadEstimatorNodelet(
                       "%.6f");
   declareAndReadParam("ekf_payload.r_tension", r_tension_, "%.6f");
 
+  declareAndReadParam("ekf_payload.publish_rate", publish_rate_, "%.6f");
+
   const auto qos = rclcpp::SensorDataQoS();
 
   sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "odom", qos,
       std::bind(&PayloadEstimatorNodelet::odomCallback, this,
-                std::placeholders::_1));
-
-  sub_payload_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "payload/odom", qos,
-      std::bind(&PayloadEstimatorNodelet::payloadOdomCallback, this,
                 std::placeholders::_1));
 
   sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -87,29 +84,21 @@ PayloadEstimatorNodelet::PayloadEstimatorNodelet(
                 std::placeholders::_1));
 
   pub_force_inertial_ =
-      this->create_publisher<std_msgs::msg::Float64MultiArray>("force_inertial",
-                                                               10);
+      this->create_publisher<std_msgs::msg::Float64MultiArray>(
+          "payload/force_inertial", 10);
   pub_thrust_inertial_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "thrust_inertial", 10);
+          "payload/thrust_inertial", 10);
   pub_cable_direction_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "cable_direction", 10);
+          "payload/cable_direction", 10);
 
   pub_cable_direction_ekf_ =
       this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "cable_direction_ekf", 10);
-
-  pub_cable_direction_geom_ =
-      this->create_publisher<std_msgs::msg::Float64MultiArray>(
-          "cable_direction_geom", 10);
-
-  pub_payload_est_point_ =
-      this->create_publisher<geometry_msgs::msg::PointStamped>(
-          "payload_estimated_point", 10);
+          "payload/cable_direction_ekf", 10);
 
   pub_payload_est_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(
-      "payload_estimated_odom", 10);
+      "payload/estimated_odom", 10);
 
   const double period_s = 1.0 / std::max(1.0, publish_rate_);
   publish_timer_ = this->create_wall_timer(
@@ -159,16 +148,9 @@ void PayloadEstimatorNodelet::odomCallback(
   last_odom_ = msg;
 }
 
-void PayloadEstimatorNodelet::payloadOdomCallback(
-    const nav_msgs::msg::Odometry::SharedPtr msg) {
-  std::lock_guard<std::mutex> lock(data_mutex_);
-  last_payload_odom_ = msg;
-}
-
 void PayloadEstimatorNodelet::imuCallback(
     const sensor_msgs::msg::Imu::SharedPtr msg) {
   nav_msgs::msg::Odometry::SharedPtr odom;
-  nav_msgs::msg::Odometry::SharedPtr payload_odom;
   quadrotor_msgs::msg::TRPYCommand::SharedPtr trpy;
   quadrotor_msgs::msg::BetaFlightStates::SharedPtr betaflight;
   sensor_msgs::msg::FluidPressure::SharedPtr tension;
@@ -177,13 +159,12 @@ void PayloadEstimatorNodelet::imuCallback(
     std::lock_guard<std::mutex> lock(data_mutex_);
     last_imu_ = msg;
     odom = last_odom_;
-    payload_odom = last_payload_odom_;
     trpy = last_trpy_;
     tension = last_tension_;
     betaflight = last_betaflight_;
   }
 
-  processImu(*msg, odom, trpy, tension, payload_odom, betaflight);
+  processImu(*msg, odom, trpy, tension, betaflight);
 }
 
 void PayloadEstimatorNodelet::trpyCallback(
@@ -212,7 +193,6 @@ void PayloadEstimatorNodelet::processImu(
     const nav_msgs::msg::Odometry::SharedPtr &odom,
     const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
     const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
-    const nav_msgs::msg::Odometry::SharedPtr &payload_odom,
     const quadrotor_msgs::msg::BetaFlightStates::SharedPtr &betaflight) {
 
   if (!odom || !trpy) {
@@ -322,11 +302,9 @@ void PayloadEstimatorNodelet::processImu(
 // --------------------------------------------------------------------------
 void PayloadEstimatorNodelet::publishTimerCallback() {
   nav_msgs::msg::Odometry::SharedPtr odom;
-  nav_msgs::msg::Odometry::SharedPtr payload_odom;
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     odom = last_odom_;
-    payload_odom = last_payload_odom_;
   }
 
   if (!odom) {
@@ -410,14 +388,6 @@ void PayloadEstimatorNodelet::publishTimerCallback() {
     stamp = t;
   }
 
-  geometry_msgs::msg::PointStamped payload_point_msg;
-  payload_point_msg.header.stamp = stamp;
-  payload_point_msg.header.frame_id = frame_id_;
-  payload_point_msg.point.x = p_payload_est.x();
-  payload_point_msg.point.y = p_payload_est.y();
-  payload_point_msg.point.z = p_payload_est.z();
-  pub_payload_est_point_->publish(payload_point_msg);
-
   nav_msgs::msg::Odometry payload_odom_msg;
   payload_odom_msg.header.stamp = stamp;
   payload_odom_msg.header.frame_id = frame_id_;
@@ -433,19 +403,6 @@ void PayloadEstimatorNodelet::publishTimerCallback() {
   payload_odom_msg.twist.twist.linear.y = v_payload_est.y();
   payload_odom_msg.twist.twist.linear.z = v_payload_est.z();
   pub_payload_est_odom_->publish(payload_odom_msg);
-
-  if (payload_odom) {
-    const Eigen::Vector3d p_payload = odomPositionWorld(*payload_odom);
-    const Eigen::Vector3d delta = p_payload - p_q;
-    const double delta_norm = delta.norm();
-    Eigen::Vector3d cable_direction_geom = Eigen::Vector3d::Zero();
-    if (delta_norm > 1e-9) {
-      cable_direction_geom = delta / delta_norm;
-    }
-    publishFloatVector(pub_cable_direction_geom_,
-                       {cable_direction_geom.x(), cable_direction_geom.y(),
-                        cable_direction_geom.z(), cable_direction_geom.norm()});
-  }
 }
 
 // --------------------------------------------------------------------------
@@ -488,7 +445,6 @@ void PayloadEstimatorNodelet::initializeFilter(
   last_filter_time_ = stamp_sec;
   last_force_update_time_ = -1.0;
   last_tension_update_time_ = -1.0;
-  last_payload_odom_update_time_ = -1.0;
 
   normalizeFilterState();
   symmetrizeCovariance();

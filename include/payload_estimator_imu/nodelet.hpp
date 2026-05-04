@@ -49,7 +49,6 @@ private:
       const nav_msgs::msg::Odometry::SharedPtr &odom,
       const quadrotor_msgs::msg::TRPYCommand::SharedPtr &trpy,
       const sensor_msgs::msg::FluidPressure::SharedPtr &tension,
-      const nav_msgs::msg::Odometry::SharedPtr &payload_odom,
       const quadrotor_msgs::msg::BetaFlightStates::SharedPtr &betaflight);
 
   // EKF core. Call only while holding filter_mutex_.
@@ -110,8 +109,6 @@ private:
 
   double odom_timeout_{0.10};
 
-  double payload_odom_timeout_{0.10};
-
   double max_prediction_dt_{0.005};
 
   double reset_dt_{0.25};
@@ -160,7 +157,6 @@ private:
   // Cached measurements.
   mutable std::mutex data_mutex_;
   nav_msgs::msg::Odometry::SharedPtr last_odom_;
-  nav_msgs::msg::Odometry::SharedPtr last_payload_odom_;
   sensor_msgs::msg::Imu::SharedPtr last_imu_;
   quadrotor_msgs::msg::TRPYCommand::SharedPtr last_trpy_;
   quadrotor_msgs::msg::BetaFlightStates::SharedPtr last_betaflight_;
@@ -175,7 +171,6 @@ private:
   double last_filter_time_{-1.0};
   double last_force_update_time_{-1.0};
   double last_tension_update_time_{-1.0};
-  double last_payload_odom_update_time_{-1.0};
 
   Eigen::Vector3d last_A_world_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d last_force_inertial_{Eigen::Vector3d::Zero()};
@@ -189,7 +184,6 @@ private:
 
   // ROS interfaces.
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_payload_odom_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
   rclcpp::Subscription<quadrotor_msgs::msg::TRPYCommand>::SharedPtr sub_trpy_;
   rclcpp::Subscription<quadrotor_msgs::msg::BetaFlightStates>::SharedPtr
@@ -204,10 +198,6 @@ private:
       pub_cable_direction_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
       pub_cable_direction_ekf_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
-      pub_cable_direction_geom_;
-  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr
-      pub_payload_est_point_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_payload_est_odom_;
 
   rclcpp::TimerBase::SharedPtr publish_timer_;
